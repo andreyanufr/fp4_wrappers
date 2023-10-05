@@ -4,40 +4,15 @@ import torch
 layer_norm_stat = {}
 
 
-# def getActivation(name):
-#     # the hook signature
-#     def hook(model, input, output):
-#         if hasattr(input, 'logits'):
-#             data = input.logit
-#         else:
-#             data = input
-#         dim = [0] if len(data[0].shape) == 2 else [0, 1]
-#         if name not in layer_norm_stat:
-#             tmp = torch.mean(input[0].detach(), dim=dim).cpu()
-#             layer_norm_stat[name] = [1, [tmp]]
-#         else:
-#             tmp = torch.mean(input[0].detach(), dim=dim).cpu()
-#             # tmp = (layer_norm_stat[name][1] * layer_norm_stat[name][0] + tmp) / (
-#             #     layer_norm_stat[name][0] + 1
-#             # )
-#             layer_norm_stat[name][0] += 1
-#             layer_norm_stat[name][1].append(tmp)
-
-#     return hook
-
 def getActivation(name):
     # the hook signature
     def hook(model, input, output):
-        if hasattr(input[0], 'logits'):
-            data = input[0].logits
-        else:
-            data = input[0]
-        dim = [0] if len(data.shape) == 2 else [0, 1]
+        dim = [0] if len(input[0].shape) == 2 else [0, 1]
         if name not in layer_norm_stat:
-            tmp = torch.mean(data.detach(), dim=dim).cpu()
+            tmp = torch.mean(input[0].detach(), dim=dim).cpu()
             layer_norm_stat[name] = [1, [tmp]]
         else:
-            tmp = torch.mean(data.detach(), dim=dim).cpu()
+            tmp = torch.mean(input[0].detach(), dim=dim).cpu()
             # tmp = (layer_norm_stat[name][1] * layer_norm_stat[name][0] + tmp) / (
             #     layer_norm_stat[name][0] + 1
             # )
@@ -46,51 +21,14 @@ def getActivation(name):
 
     return hook
 
-class Normalizer(torch.nn.Module):
-    def __init__(self, n_feaures):
-        super().__init__()
-        self.alpha = torch.nn.Parameter(torch.ones(n_feaures))
-        self.beta = torch.nn.Parameter(torch.zeros(n_feaures))
-    
-    def forward(self, x):
-        if hasattr(x, 'logits'):
-            x.logits = x.logits *  self.alpha + self.beta
-            return x
-
-        return x * self.alpha + self.beta
-
-
-class NormalizerWrapper(torch.nn.Module):
-    def __init__(self, module, n_features) -> None:
-        super().__init__()
-        self.module = module
-        device = next(module.parameters()).device
-        self.norm = Normalizer(n_features).to(device)
-
-    def forward(self , *args, **kwargs):
-        y = self.module(*args, **kwargs)
-        n_y = self.norm(y)
-        return n_y
-
-
-# def regiset_stat_hooks(hooks, layer, name=""):
-#     if isinstance(layer, torch.nn.LayerNorm):
-#         h = layer.register_forward_hook(getActivation(name))
-#         hooks.append(h)
-#         print('Hook for layer: ', name)
-#     else:
-#         for cname, clayer in layer.named_children():
-#             regiset_stat_hooks(hooks, clayer, name + "." + cname)
-
 def regiset_stat_hooks(hooks, layer, name=""):
-    if isinstance(layer, Normalizer):
+    if isinstance(layer, torch.nn.LayerNorm):
         h = layer.register_forward_hook(getActivation(name))
         hooks.append(h)
         print('Hook for layer: ', name)
     else:
         for cname, clayer in layer.named_children():
             regiset_stat_hooks(hooks, clayer, name + "." + cname)
-
 
 def ln_forward(ln, x):
     m = torch.mean(x, dim=-1, keepdim=True)
